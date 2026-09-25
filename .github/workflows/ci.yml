@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-type-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # XGBoost's compiled library needs the OpenMP runtime on Linux, same
+      # as macOS needs `brew install libomp` -- see README Phase 5 notes.
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
+
+      - name: Install Python dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Ruff (lint)
+        run: ruff check .
+
+      - name: mypy (types)
+        run: mypy src scripts tests
+
+      - name: pytest
+        run: pytest -q
+        env:
+          # Same fix as tests/conftest.py documents: numpy's Accelerate
+          # backend isn't the issue on Linux runners, but pinning threads
+          # costs nothing and keeps CI behavior identical to local dev.
+          OMP_NUM_THREADS: "1"
+          VECLIB_MAXIMUM_THREADS: "1"

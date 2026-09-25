@@ -1,0 +1,21 @@
+# Configurable feature-engineering parameters. Changing these and re-running
+# scripts/build_features.py regenerates data/processed/features.parquet
+# without touching any code.
+
+targets:
+  pm25:
+    horizons_hours: [1, 2]   # primary (t+1h) and secondary (t+2h) — see README
+  no2:
+    horizons_hours: [1]      # optional secondary pollutant
+
+pollution_features:
+  lags_hours: [1, 2, 3, 6, 12, 24]
+  rolling_windows_hours: [3, 6, 24]
+  trend_window_hours: 6
+
+spatial_features:
+  k_neighbors: 5
+  max_neighbor_distance_km: 100   # neighbors farther than this are excluded
+
+weather_features:
+  pressure_tendency_window_hours: 3

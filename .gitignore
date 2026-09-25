@@ -1,0 +1,39 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.env
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Data — raw/processed are large and reproducibly downloaded, never committed
+data/raw/**
+data/processed/**
+!data/raw/.gitkeep
+!data/raw/uba/.gitkeep
+!data/raw/dwd/.gitkeep
+!data/processed/.gitkeep
+data/sample/*.parquet
+data/sample/*.csv
+
+# Models — trained artifacts, not committed (tracked via MLflow instead)
+models/**
+!models/.gitkeep
+
+# MLflow / Prefect local state
+mlruns/
+mlartifacts/
+.prefect/
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/

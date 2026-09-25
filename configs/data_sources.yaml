@@ -1,0 +1,82 @@
+# Data source registry — every field here was verified against a live
+# response during Phase 1 inspection (2026-09-22). Do not add fields that
+# have not been confirmed against the actual API/portal.
+
+uba_air_data:
+  name: "Umweltbundesamt (UBA) Air Data API v3"
+  base_url: "https://www.umweltbundesamt.de/api/air_data/v3"
+  # The base URL 301-redirects to https://luftdaten.umweltbundesamt.de/api/air-data/v3
+  # (note hyphen vs underscore). Both work; requests should follow redirects.
+  auth: none
+  format: json
+  license: "Datenlizenz Deutschland – Namensnennung 2.0 (attribution required)"
+  # TODO(ingestion): fetch and quote the exact license URL into README before publishing.
+  endpoints:
+    stations: "/stations/json"       # 2400 stations total (verified), 1175 active (date_to null)
+    components: "/components/json"   # 12 pollutants; PM2.5 = id 9 ("PM2"), NO2 = id 5, PM10 = id 1, O3 = id 3
+    scopes: "/scopes/json"           # aggregation windows
+    measures: "/measures/json"       # actual values; params: station, component, scope, date_from/to, time_from/to
+  temporal_resolution: hourly
+  # CONFIRMED by live query (station 282, component 9/PM2.5, scope 2/one-hour-average):
+  # one row per clock hour, no sub-hourly values exist for the standard network.
+  # This is why prediction horizons in this project are t+1h / t+2h rather than
+  # literal 30/60-minute-ahead — see README "Methodology" section.
+  geographic_coverage: "Germany, federal + state monitoring networks"
+  notes: >
+    Not every active station measures every component — per-station component
+    availability must be queried during ingestion, not assumed.
+
+dwd_open_data:
+  name: "Deutscher Wetterdienst (DWD) Climate Data Center — Open Data"
+  base_url: "https://opendata.dwd.de/climate_environment/CDC/observations_germany/climate"
+  auth: none
+  format: "per-station ZIP files containing semicolon-delimited text"
+  license: "CC BY 4.0 (Creative Commons Attribution)"
+  resolution_used: hourly
+  hourly_parameters_confirmed:
+    - air_temperature   # also provides RF_TU (relative humidity) in the same file
+    - wind
+    - pressure
+    - precipitation
+  # "moisture" folder exists but is unused — air_temperature's RF_TU column
+  # already provides relative humidity, so a 5th download per station would
+  # be redundant.
+  path_pattern: "hourly/{parameter}/{recent|historical}/"
+  file_naming: "stundenwerte_{PARAM_CODE}_{station_id}_akt.zip (recent) / _{from}_{to}_hist.zip (historical)"
+  station_metadata_file: "{PARAM_CODE}_Stundenwerte_Beschreibung_Stationen.txt"
+  # ^ contains station id, lat/lon, elevation, name — used for the DWD-station lookup.
+  recent_window: "~500 days rolling"
+  geographic_coverage: "Germany, national DWD station network"
+  notes: >
+    UBA (pollution) and DWD (weather) are two different physical networks.
+    Weather features are joined to each UBA station via nearest-DWD-station
+    by haversine distance — documented as a spatial join, not co-located sensors.
+
+  # OBSERVED during the Phase 2 full ingestion run (2026-09-22, 90-day window):
+  # of 315 UBA PM2.5 stations x 4 weather parameters = 1260 nearest-station
+  # lookups (703 unique after dedup), 35 unique (station,parameter) downloads
+  # returned HTTP 404 despite the station's metadata claiming it is currently
+  # active. Failures concentrate heavily in precipitation (46/315 UBA
+  # stations, ~85% success) vs. ~99% success for temperature/wind/pressure.
+  # Root cause: DWD's station-description "bis_datum" (active-until date)
+  # is not a reliable predictor of whether a "recent" zip is actually
+  # published for that station-parameter combination. Every UBA station
+  # still got at least one successful weather parameter joined.
+  known_data_quality_issue: >
+    ~15% of nearest-DWD precipitation downloads 404 despite active metadata;
+    handled as missing data (NaN), not retried against a second-nearest
+    station in this version.
+
+  # BUG FOUND AND FIXED during Phase 3 schema validation (2026-09-22): the
+  # hourly pressure product file has two columns, "P" (mean sea-level
+  # pressure) and "P0" (station-level pressure, NOT reduced) — the file's
+  # own naming code is also "P0" (stundenwerte_P0_*.zip), which is a
+  # coincidence unrelated to the column meaning. Ingestion originally
+  # mapped the "P0" *column* to pressure_msl_hpa, which produced physically
+  # impossible sea-level readings of ~700 hPa for the Zugspitze station
+  # (2956m elevation) — a real value for station-level pressure at that
+  # altitude (barometric formula), but impossible for sea-level-reduced
+  # pressure. Caught by the pandera range check [850, 1100] hPa in
+  # aqcascade.validation.schemas.dwd_weather_schema, confirmed by
+  # cross-referencing the affected station's elevation, and fixed in
+  # aqcascade.ingestion.dwd.PARAMETERS before any modeling used the data.

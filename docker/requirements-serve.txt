@@ -1,0 +1,40 @@
+# Runtime dependencies for the SERVED api/dashboard only -- deliberately a
+# subset of pyproject.toml's full dependency list, not the whole thing.
+#
+# The API serves the Phase 5/8 XGBoost "Model C" artifacts and the
+# dashboard reads pre-computed parquet/CSV/JSON files; neither imports
+# torch, torch_geometric, mlflow, prefect, duckdb, or pandera at runtime --
+# those are training/experimentation-time-only (used locally, not in this
+# image). Keeping this list separate keeps the serving image lean instead
+# of pulling in a multi-hundred-MB torch install nothing here would ever
+# call. See README "MLOps" for why this intentionally diverges from
+# pyproject.toml rather than reusing it wholesale.
+pandas>=2.2
+pyarrow>=17.0
+numpy>=1.26,<2.0
+scikit-learn>=1.5
+# MUST match the training environment's XGBoost major version (pyproject.toml,
+# currently 3.4.1) -- NOT pinned to an older 2.x line here despite that
+# seeming like an easy size win. XGBoost 3's Linux wheel pulls in
+# nvidia-nccl-cu13 (~305MB, GPU-only, never used by this CPU-only image),
+# so 2.1.4 was tried first. It loaded the joblib-pickled model without
+# erroring, but the WARNING it printed during load ("please export the
+# model by calling Booster.save_model from that version first") turned out
+# to be load-bearing, not noise: predicting on an identical input row
+# through the identical model file gave 13.46 with 3.4.1 and 6.69 with
+# 2.1.4 -- pickle is not a cross-major-version-safe format for XGBoost's
+# internal booster state. Caught by actually comparing predictions before
+# trusting the smaller image, not by "it loaded without an exception".
+# The real fix (re-saving models via XGBoost's own portable
+# Booster.save_model/.json format instead of joblib pickle) is a genuine
+# future improvement, not done here to avoid retraining scope creep this
+# late in the project -- documented in README Limitations instead.
+xgboost>=2.1
+joblib>=1.4
+pydantic>=2.8
+python-dotenv>=1.0
+requests>=2.31
+fastapi>=0.112
+uvicorn[standard]>=0.30
+streamlit>=1.37
+pydeck>=0.9
