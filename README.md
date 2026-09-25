@@ -19,6 +19,13 @@ this architecture — not a general claim that GNNs are worse at spatial tasks.
 > below is measured from this repo's own scripts and output files, not
 > invented.
 
+![Dashboard demo](docs/dashboard-demo.gif)
+
+*Real screenshots of the live Streamlit dashboard, backed by the FastAPI
+service — forecast + trend, neighboring-station table, model comparison,
+station map, then switching to the hardest station in the test set
+(Halle/Paracelsusstr.) and its actual ~250 µg/m³ spike history.*
+
 ## Data
 
 | Source | What | Resolution | License |
