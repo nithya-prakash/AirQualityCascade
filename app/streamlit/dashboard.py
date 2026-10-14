@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 PROCESSED_DIR = ROOT / "data" / "processed"
+RESULTS_DIR = ROOT / "results"
 API_URL = os.environ.get("AQCASCADE_API_URL", "http://localhost:8010")
 
 st.set_page_config(page_title="AirQualityCascade", layout="wide")
@@ -82,9 +83,8 @@ station_meta = load_station_meta()
 neighbor_graph = load_neighbor_graph()
 error_by_station = load_csv_if_exists("error_analysis_by_station.csv")
 error_summary = load_json_if_exists("error_analysis_summary.json")
-baseline_results = load_csv_if_exists("baseline_results.csv")
-transformer_results = load_csv_if_exists("transformer_results.csv")
-gnn_results = load_csv_if_exists("gnn_results.csv")
+common_results_path = RESULTS_DIR / "common_rows_results.csv"
+common_results = pd.read_csv(common_results_path) if common_results_path.exists() else None
 
 data_as_of = features["timestamp"].max()
 
@@ -233,51 +233,44 @@ st.divider()
 
 # --------------------------------------------------------- model comparison
 st.subheader("Model comparison")
-st.caption(
-    "Real test-set results from every model built in this project (Phases 5-8), "
-    "PM2.5 t+1h, same chronological test period for all. See README 'Results' for "
-    "the full table including t+2h and NO2."
-)
-comparison_rows = []
-if baseline_results is not None:
-    for model_name in ["persistence", "linear_regression", "random_forest", "xgboost"]:
-        r = baseline_results[
-            (baseline_results["target"] == "target_pm25_h1")
-            & (baseline_results["split"] == "test")
-            & (baseline_results["model"] == model_name)
-        ]
-        if not r.empty:
-            row = r.iloc[0]
-            comparison_rows.append(
-                {"Model": model_name, "MAE": row["mae"], "RMSE": row["rmse"], "R²": row["r2"]}
-            )
-if transformer_results is not None:
-    r = transformer_results[
-        (transformer_results["target"] == "target_pm25_h1")
-        & (transformer_results["split"] == "test")
-    ]
-    if not r.empty:
-        row = r.iloc[0]
-        comparison_rows.append(
-            {"Model": "transformer", "MAE": row["mae"], "RMSE": row["rmse"], "R²": row["r2"]}
-        )
-if gnn_results is not None:
-    r = gnn_results[(gnn_results["target"] == "target_pm25_h1") & (gnn_results["split"] == "test")]
-    if not r.empty:
-        row = r.iloc[0]
-        comparison_rows.append(
-            {"Model": "gnn", "MAE": row["mae"], "RMSE": row["rmse"], "R²": row["r2"]}
-        )
-
-if comparison_rows:
-    comparison_df = pd.DataFrame(comparison_rows).sort_values("R²", ascending=False)
+MODEL_LABELS = {
+    "persistence": "Persistence",
+    "linear_regression": "Linear regression",
+    "random_forest": "Random forest",
+    "xgboost": "XGBoost (served model)",
+    "ablation_A": "XGBoost tier A: local history (retrained)",
+    "ablation_B": "XGBoost tier B: + weather (retrained)",
+    "ablation_C": "XGBoost tier C: + neighbours (retrained)",
+    "gnn": "GNN",
+    "transformer": "Transformer (no neighbour features)",
+}
+if common_results is not None:
+    n_rows = int(common_results["n"].iloc[0])
+    st.caption(
+        f"PM2.5, every model scored on the same {n_rows:,} test rows (both targets and the current "
+        "value present). One chronological test window, single run, no confidence intervals. "
+        "See README 'Results'."
+    )
+    h1 = common_results[common_results["target"] == "target_pm25_h1"].set_index("model")
+    h2 = common_results[common_results["target"] == "target_pm25_h2"].set_index("model")
+    comparison_df = pd.DataFrame(
+        {
+            "Model": [MODEL_LABELS.get(m, m) for m in h1.index],
+            "t+1h MAE": h1["mae"].to_numpy(),
+            "t+1h RMSE": h1["rmse"].to_numpy(),
+            "t+1h R²": h1["r2"].to_numpy(),
+            "t+2h R²": h2.loc[h1.index, "r2"].to_numpy(),
+        }
+    ).sort_values("t+1h R²", ascending=False)
     st.dataframe(
-        comparison_df.style.format({"MAE": "{:.3f}", "RMSE": "{:.3f}", "R²": "{:.3f}"}),
+        comparison_df.style.format(
+            {"t+1h MAE": "{:.3f}", "t+1h RMSE": "{:.3f}", "t+1h R²": "{:.3f}", "t+2h R²": "{:.3f}"}
+        ),
         hide_index=True,
         use_container_width=True,
     )
 else:
-    st.info("Model comparison results not found -- run the Phase 5-8 training scripts first.")
+    st.info("Model comparison results not found -- run scripts/evaluate_common_rows.py first.")
 
 st.divider()
 
