@@ -1,5 +1,7 @@
 """Phase 5: baseline forecasting models, evaluated on the same chronological
-train/val/test split for every (target, model) pair.
+train/val/test split and the same rows (target and current PM2.5 present) for every
+(target, model) pair *within this script*. Other scripts score different rows; cross-model
+comparisons use scripts/evaluate_common_rows.py.
 
 Usage:
     python scripts/train_baselines.py

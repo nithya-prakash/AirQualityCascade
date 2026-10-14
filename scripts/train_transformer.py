@@ -1,5 +1,9 @@
-"""Phase 6: train the Temporal Transformer on PM2.5 t+1h/t+2h, evaluated on
-the same chronological test period as the Phase 5 baselines.
+"""Phase 6: train the Temporal Transformer on PM2.5 t+1h/t+2h.
+
+Its chronological split is computed over its *valid samples* (full 24 h window, both targets),
+not over the full hourly grid, so its test window differs from the baselines' (on the current
+data it starts 2026-09-07 07:00 instead of 2026-09-08 12:00) and its reported metrics are not
+comparable to theirs. Cross-model comparisons use scripts/evaluate_common_rows.py.
 
 Usage:
     python scripts/train_transformer.py

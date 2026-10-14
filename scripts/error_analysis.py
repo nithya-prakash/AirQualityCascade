@@ -1,5 +1,7 @@
 """Phase 8: error analysis for the PM2.5 t+1h test-period predictions.
 
+Scored on the common rows (see aqcascade.evaluation.common_rows), 83,970 on the current data.
+
 Refits Model C (XGBoost, local + weather + spatial -- the strongest flat
 model from the Phase 8 ablation) to get row-level predictions with
 station_id/timestamp attached, which none of the training scripts save by
@@ -22,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import pandas as pd  # noqa: E402
 
+from aqcascade.evaluation.common_rows import KEY, select_common_rows  # noqa: E402
 from aqcascade.evaluation.spike_metrics import (  # noqa: E402
     compute_spike_classification_metrics,
     compute_spike_threshold,
@@ -46,7 +49,10 @@ def main() -> None:
 
     train, _val, test = chronological_split(features, "timestamp", train_frac=0.7, val_frac=0.15)
     train_t = train.dropna(subset=[TARGET_COL])
-    test_t = test.dropna(subset=[TARGET_COL]).reset_index(drop=True)
+    # Score on the common rows used for the model comparison (both targets and current PM2.5
+    # present), so these numbers describe the same rows as the README's comparison tables.
+    common = select_common_rows(test, ["target_pm25_h1", "target_pm25_h2"], "pm25")
+    test_t = test.merge(common, on=KEY, how="inner").reset_index(drop=True)
 
     logger.info(
         "Refitting Model C (XGBoost, %d features) for row-level predictions...",

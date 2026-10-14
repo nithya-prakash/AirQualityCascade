@@ -9,12 +9,12 @@
 # of pulling in a multi-hundred-MB torch install nothing here would ever
 # call. See README "MLOps" for why this intentionally diverges from
 # pyproject.toml rather than reusing it wholesale.
-pandas>=2.2
-pyarrow>=17.0
-numpy>=1.26,<2.0
-scikit-learn>=1.5
-# MUST match the training environment's XGBoost major version (pyproject.toml,
-# currently 3.4.1) -- NOT pinned to an older 2.x line here despite that
+pandas==3.0.6
+pyarrow==25.0.1
+numpy==1.26.4
+scikit-learn==1.9.1
+# MUST equal the training environment's XGBoost version (pinned to ==3.4.1 here and in
+# pyproject.toml; tests/unit/test_model_versions.py fails if the two ever differ) -- NOT pinned to an older 2.x line here despite that
 # seeming like an easy size win. XGBoost 3's Linux wheel pulls in
 # nvidia-nccl-cu13 (~305MB, GPU-only, never used by this CPU-only image),
 # so 2.1.4 was tried first. It loaded the joblib-pickled model without
@@ -29,12 +29,12 @@ scikit-learn>=1.5
 # Booster.save_model/.json format instead of joblib pickle) is a genuine
 # future improvement, not done here to avoid retraining scope creep this
 # late in the project -- documented in README Limitations instead.
-xgboost>=2.1
-joblib>=1.4
-pydantic>=2.8
-python-dotenv>=1.0
-requests>=2.31
-fastapi>=0.112
-uvicorn[standard]>=0.30
-streamlit>=1.37
-pydeck>=0.9
+xgboost==3.4.1
+joblib==1.6.0
+pydantic==2.13.5
+python-dotenv==1.2.3
+requests==2.34.2
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+streamlit==1.64.0
+pydeck==0.9.3

@@ -1,0 +1,28 @@
+# Exact versions of the direct dependencies the trained artifacts and reported results came from
+# (macOS arm64, Python 3.12, read from the training environment on 2026-10-14).
+# Use:  pip install -e ".[dev]" -c constraints.txt
+# Not wired into CI yet: CI installs on Linux and this has not been run there.
+requests==2.34.2
+pandas==3.0.6
+pyarrow==25.0.1
+numpy==1.26.4
+duckdb==1.5.5
+pydantic==2.13.5
+python-dotenv==1.2.3
+pyyaml==6.0.3
+tqdm==4.70.1
+pandera==0.33.1
+scikit-learn==1.9.1
+xgboost==3.4.1
+joblib==1.6.0
+torch==2.14.0
+torch-geometric==2.8.0.post1
+fastapi==0.141.1
+uvicorn==0.53.0
+streamlit==1.64.0
+mlflow==3.16.1
+prefect==3.8.6
+httpx==0.28.1
+pytest==9.1.1
+ruff==0.16.8
+mypy==2.3.1

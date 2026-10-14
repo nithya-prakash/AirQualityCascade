@@ -1,0 +1,11 @@
+# One-off evaluation image: the exact package versions the models were trained with, CPU only.
+# Used by scripts/evaluate_common_rows.py (see README "Evaluation protocol"). Not a serving image.
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY docker/requirements-eval.txt .
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.14.0 \
+    && pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+       -r requirements-eval.txt
+ENV PYTHONPATH=/app/src OMP_NUM_THREADS=1 PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1

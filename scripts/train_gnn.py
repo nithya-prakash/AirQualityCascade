@@ -1,5 +1,8 @@
-"""Phase 7: train the spatial GNN (Model D) on PM2.5 t+1h/t+2h, evaluated
-on the same chronological test period as the Phase 5/6 models.
+"""Phase 7: train the spatial GNN (Model D) on PM2.5 t+1h/t+2h.
+
+Its split is by hourly snapshot and has the same boundaries as the Phase 5 baselines'
+(identical test window), but it scores every target-present row, including rows whose current
+PM2.5 is missing. Cross-model comparisons use scripts/evaluate_common_rows.py.
 
 Usage:
     python scripts/train_gnn.py

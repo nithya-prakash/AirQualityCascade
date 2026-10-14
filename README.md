@@ -115,7 +115,7 @@ feature-building code on a synthetic panel with a spike planted at a future
 hour and asserts no feature sees it early (with a positive control proving
 the check isn't vacuous).
 
-**Features** (67 columns, 680,400 rows = 315 stations × 2,160 hours,
+**Features** (69 feature columns, 72 model inputs after one-hot encoding `season`; 680,400 rows = 315 stations × 2,160 hours,
 [`features.yaml`](configs/features.yaml)): pollution history (lags, rolling
 stats, rate-of-change), weather, calendar (cyclically encoded), and spatial
 (k=5 nearest same-pollutant neighbors within 100km).
@@ -128,62 +128,89 @@ instead of consuming a pre-computed neighbor summary.
 
 ## Results
 
-Test-split metrics, full breakdown in
-`data/processed/{baseline,transformer,gnn}_results.csv`:
+### Evaluation protocol
 
-| Target | Model | MAE | RMSE | R² |
-|---|---|--:|--:|--:|
-| PM2.5 t+1h | Persistence | **0.723** | 2.130 | 0.453 |
-| PM2.5 t+1h | XGBoost | 0.741 | 1.848 | 0.588 |
-| PM2.5 t+1h | GNN | 0.873 | 1.859 | 0.582 |
-| PM2.5 t+1h | Transformer | 0.848 | **1.835** | **0.618** |
-| PM2.5 t+2h | Persistence | 1.106 | 2.555 | 0.210 |
-| PM2.5 t+2h | **XGBoost** | **1.036** | **2.073** | **0.480** |
-| NO2 t+1h | **XGBoost** | **2.507** | **4.187** | **0.846** |
+Every model uses the same chronological split (first 70% of hours train, next 15% validation, last 15%
+test; test = 2026-09-08 12:00 → 2026-09-21 23:00, 324 hours, 315 stations, 102,060 station-hours).
+The tables below score **every model on the same 83,970 test rows**: rows where both PM2.5 targets
+(t+1h and t+2h) and the current PM2.5 value are present (`select_common_rows` in
+[`common_rows.py`](src/aqcascade/evaluation/common_rows.py)). The current value is required because
+persistence copies it. All models are scored against identical target values with the same metric
+function, and a model that cannot predict a common row is an error, not a silent drop.
 
-Persistence has the *lowest* raw MAE at PM2.5 t+1h (most hours barely
-change) but the *worst* R² except itself at t+2h (it can't see sharp swings
-coming) — both real, not in tension, they measure different things. These
-baselines mix local/weather/spatial signal, so they can't say *why* XGBoost
-wins — that's the controlled experiment below.
+This replaced an earlier table that compared models on different rows (n = 84,934 for the baselines,
+85,595 for the ablation and GNN, 93,619 for the Transformer). The Transformer's split is computed on
+its valid samples only, so its test window started 29 hours earlier (2026-09-07 07:00) and 8,994 of its
+93,619 rows fell before the shared test window. Re-scoring: [`evaluate_common_rows.py`](scripts/evaluate_common_rows.py),
+output in [`results/`](results/). Saved models and the Transformer/GNN checkpoints are re-used; the
+ablation tiers were not saved and are **retrained** by the same procedure.
+
+Before trusting the regenerated predictions, each model was re-scored on its own original rows: the saved
+models, Transformer and GNN reproduce their previously reported R² to within 1e-7
+([`common_rows_gate.csv`](results/common_rows_gate.csv)); the retrained ablation tiers differ from the
+originals by up to 0.008 R² (different platform, same code and seed). Those ablation runs are therefore
+*not* exactly reproducible, and 0.008 is the size of retraining noise to keep in mind when reading small gaps.
+The common-row numbers below were newly measured on 2026-10-14 and were identical across two full runs
+(deterministic given the saved models and a fixed seed); that is not multi-seed validation.
+
+### Model comparison (83,970 common rows)
+
+| Model | t+1h MAE | t+1h RMSE | t+1h R² | t+2h MAE | t+2h RMSE | t+2h R² |
+|---|--:|--:|--:|--:|--:|--:|
+| Persistence | **0.725** | 2.139 | 0.452 | 1.106 | 2.556 | 0.210 |
+| Linear regression | 0.800 | 1.902 | 0.567 | 1.125 | 2.212 | 0.408 |
+| Random forest | 0.770 | 1.990 | 0.526 | 1.082 | 2.152 | 0.440 |
+| XGBoost (Model C, the served model) | 0.742 | 1.855 | 0.588 | **1.037** | **2.074** | **0.480** |
+| GNN | 0.869 | 1.864 | 0.584 | 1.117 | 2.130 | 0.451 |
+| Transformer (no neighbour features) | 0.830 | **1.818** | **0.604** | 1.137 | 2.147 | 0.443 |
+
+- **t+1h:** the Transformer still has the highest R² and lowest RMSE, but its lead over XGBoost shrank
+  from 0.030 R² (0.618 vs 0.588 as first reported) to 0.016 once both are scored on the same rows. It has
+  a *worse* MAE than persistence and XGBoost. There is one model run per method and no confidence interval,
+  so I do not claim the 0.016 gap is significant.
+- **t+2h:** XGBoost is best on every metric; the Transformer is below XGBoost, the GNN and random forest on R².
+- Persistence has the lowest MAE at t+1h (most hours barely change) but a low R² (it cannot see sharp
+  swings coming): different metrics, not a contradiction. NO2 t+1h was only trained as XGBoost (R² 0.846 on its
+  own rows) and is not part of this comparison.
 
 ### Spatial experiment
 
-Holds architecture fixed (XGBoost) and varies only feature access, in
-strictly nested tiers
-([`feature_groups.py`](src/aqcascade/models/feature_groups.py)), plus the
-GNN retrained on Model B's exact feature scope for a controlled comparison:
+Holds architecture fixed (XGBoost) and varies only feature access, in strictly nested tiers
+([`feature_groups.py`](src/aqcascade/models/feature_groups.py)), plus the GNN trained on Model B's exact
+feature scope. Scored on the same 83,970 common rows as above; tiers A/B/C are retrained, the GNN is the
+saved checkpoint:
 
-| Target | Model | Features | R² |
-|---|---|---|--:|
-| PM2.5 t+1h | A — local history only | 54 | 0.541 |
-| PM2.5 t+1h | B — A + weather | 63 | 0.560 |
-| PM2.5 t+1h | D — B + GNN message passing | 66 | 0.582 |
-| PM2.5 t+1h | **C — B + neighbor features** | 69 | **0.588** |
-| PM2.5 t+2h | A — local history only | 54 | 0.409 |
-| PM2.5 t+2h | B — A + weather | 63 | 0.431 |
-| PM2.5 t+2h | D — B + GNN message passing | 66 | 0.447 |
-| PM2.5 t+2h | **C — B + neighbor features** | 69 | **0.470** |
+| Model | Features | t+1h R² | t+2h R² |
+|---|--:|--:|--:|
+| A — local history only | 54 | 0.548 | 0.421 |
+| B — A + weather | 63 | 0.555 | 0.428 |
+| D — B + GNN message passing | 66 | 0.584 | 0.451 |
+| **C — B + neighbour features** | 69 | **0.592** | **0.473** |
 
-R² rises monotonically at every step, both horizons, no reversals — spatial
-context is the single largest feature-group contribution measured here. But
-the GNN (D), despite learning its own aggregation via message passing,
-doesn't catch up to simply handing the model a pre-computed neighbor mean
-(C). The ranking A < B < D < C holds on both horizons: message passing
-strictly helps over no spatial information at all, it just hasn't closed the
-gap to the simpler feature at *this* scale (90 days, 315 stations, a
-deliberately simple 2-layer architecture) — not run further for lack of data
-to justify a richer architecture.
+The ranking A < B < D < C holds at both horizons. What the numbers support:
+
+- **Spatial context helps XGBoost.** B → C adds +0.037 (t+1h) and +0.045 (t+2h) R², much larger than the
+  ≈0.008 retraining noise seen above.
+- **Weather adds little.** A → B is +0.007 at both horizons, about the size of that noise, so I do not
+  claim weather helps.
+- **Neighbour mean vs GNN:** C beats the GNN by 0.008 at t+1h (within noise, inconclusive) and 0.022 at
+  t+2h (clearer). The GNN is a deliberately simple 2-layer GraphSAGE on 90 days of data.
+- **This does not show spatial information is necessary.** The Transformer, which sees no neighbour
+  features, scores above every XGBoost tier at t+1h (0.604) and below them at t+2h (0.443). The claim is
+  restricted to the XGBoost ablation.
+
+These are single runs on one 13.5-day summer test window. No multiple seeds, confidence intervals or
+rolling-origin validation were run.
 
 ### Error analysis
 
-Traffic stations are harder to forecast than background stations (mean MAE
-0.807 vs 0.722) — burstier, less autocorrelated PM2.5. Per-station MAE
-correlates with that station's own outlier rate (r = 0.657). Spike
-classification (train-period 90th-percentile threshold): precision 0.71,
-recall 0.47 — conservative, usually right when it flags a spike but misses
-over half of real ones. Full breakdown:
-`data/processed/error_analysis_*.csv`.
+Model C (t+1h), scored on the same 83,970 common rows as the comparison above. Traffic stations are
+harder to forecast than background stations (mean MAE 0.803 vs 0.721) — burstier, less
+autocorrelated PM2.5. Per-station MAE correlates with that station's own outlier rate (r = 0.655).
+Spike classification (train-period 90th-percentile threshold): precision 0.72, recall 0.47 —
+conservative, usually right when it flags a spike but misses over half of real ones. Full breakdown:
+`data/processed/error_analysis_*.csv` (regenerated 2026-10-14 on the common rows; the earlier
+all-target-present rows gave 0.807 vs 0.722, r = 0.657, precision 0.71, recall 0.47).
 
 ## API
 
@@ -244,12 +271,16 @@ silently produced a different prediction) means the serving image must
 match the training XGBoost version rather than use a slimmer pin.
 `docker compose up -d && curl http://localhost:8013/health`.
 
-**CI** — [`ci.yml`](.github/workflows/ci.yml) runs `ruff`, `mypy`, `pytest`
-on push/PR; doesn't retrain or hit live APIs. Tests needing real trained
-models `skipif` on their absence
-([`conftest.py`](tests/conftest.py)) — verified locally (78 passed/13
-skipped with `data/`+`models/` hidden, 91 passed restored). Not yet
-exercised on a real GitHub Actions runner.
+**CI** — [`ci.yml`](.github/workflows/ci.yml) runs `ruff`, `mypy`, `pytest` on push/PR; it doesn't
+retrain or hit live APIs. Tests needing real trained models `skipif` on their absence
+([`conftest.py`](tests/conftest.py)). The latest GitHub Actions run (2026-09-25, 4 of 4 runs succeeded)
+reported `ruff` clean, `mypy` clean on 81 files and `78 passed, 13 skipped`; the skips are the tests that
+need the local data and models. That run predates the common-row evaluation and the version pins. `ci.yml` now installs
+with `-c constraints.txt`. Checked locally in a clean `python:3.12-slim` Linux container (arm64, not the x86_64
+GitHub runner, so not proof of Actions compatibility): the install succeeded, `ruff` and `mypy` (86 files) were
+clean, and `pytest` gave 88 passed / 14 skipped without the data and models (the skips are the tests that need
+them) and 102 passed / 0 skipped with them. `ruff` needed `known-first-party` set in `pyproject.toml`: without it
+ruff 0.16.8 flagged import order in 13 files on Linux. It has not run on GitHub Actions.
 
 ## Reproduction
 
@@ -265,6 +296,11 @@ python scripts/train_transformer.py    # ~3 min on Apple Silicon MPS
 python scripts/train_gnn.py            # ~1 min on Apple Silicon MPS
 python scripts/run_ablation.py         # ~40s
 python scripts/error_analysis.py       # ~10s
+
+# Fair model comparison on one common set of test rows (needs the trained models above;
+# pinned CPU environment in docker/Dockerfile.eval, see "Evaluation protocol"):
+docker build -t aqcascade-eval -f docker/Dockerfile.eval .
+docker run --rm -v "$PWD:/app" -w /app aqcascade-eval python scripts/evaluate_common_rows.py
 
 # --- or run everything after ingestion as one Prefect flow: ---
 python -c "from aqcascade.pipeline.flows import full_pipeline; full_pipeline(skip_ingestion=True)"
@@ -288,7 +324,8 @@ training, or `pip install xgboost` raises `dlopen ... libomp.dylib` on import.
 - Spike-classification recall (0.47) is weaker than precision (0.71) — under-flags real spikes more than it over-flags calm periods, a real gap for early-warning use.
 - `/predict`'s `uncertainty` field is a historical test-set residual, not a per-prediction confidence interval.
 - Model artifacts are joblib-pickled, not safe across XGBoost major versions (verified: a materially different prediction resulted). The real fix, `Booster.save_model`'s portable format, wasn't implemented to avoid retraining scope creep.
-- CI has not been exercised on a real GitHub Actions runner yet.
+- Evaluation is a single split, single seed, 13.5 days of summer data; no confidence intervals. Differences below about 0.01 R² should be read as noise.
+- `data/`, `models/` and `mlruns/` are not in the repository, so the result files in `results/` are the only evidence of the numbers here until the pipeline is re-run.
 
 ## License
 

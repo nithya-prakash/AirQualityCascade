@@ -17,7 +17,7 @@ dependencies = [
     "tqdm>=4.66",
     "pandera[pandas]>=0.33",
     "scikit-learn>=1.5",
-    "xgboost>=2.1",
+    "xgboost==3.4.1",  # pickled models are version-specific; keep equal to docker/requirements-serve.txt
     "joblib>=1.4",
     "torch>=2.4",
     "torch_geometric>=2.5",
@@ -54,6 +54,11 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+# Explicit, so import grouping does not depend on how ruff happens to detect first-party packages
+# (without it, ruff 0.16.8 flagged 13 files in a clean Linux environment but not on macOS).
+known-first-party = ["aqcascade"]
 
 [tool.mypy]
 python_version = "3.12"
